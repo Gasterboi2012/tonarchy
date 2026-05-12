@@ -24,3 +24,5 @@ kbd
 networkmanager
 dhcpcd
 archlinux-keyring
+nvidia-open-dkms
+flatpak
