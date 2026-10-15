@@ -25,9 +25,9 @@ enum Terminal_Size {
     TERM_LARGE = 2
 };
 
-static const char *XFCE_PACKAGES = "base base-devel linux linux-firmware linux-headers networkmanager git vim neovim curl wget htop btop man-db man-pages openssh sudo xorg-server xorg-xinit xorg-xrandr xorg-xset xfce4 xfce4-goodies xfce4-session xfce4-whiskermenu-plugin thunar thunar-archive-plugin file-roller firefox alacritty vlc evince eog fastfetch rofi ripgrep fd ttf-iosevka-nerd ttf-jetbrains-mono-nerd pavucontrol";
+static const char *XFCE_PACKAGES = "base base-devel linux linux-firmware linux-headers networkmanager git vim neovim curl wget htop btop man-db man-pages openssh sudo xorg-server xorg-xinit xorg-xrandr xorg-xset xfce4 xfce4-goodies xfce4-session xfce4-whiskermenu-plugin thunar thunar-archive-plugin file-roller firefox alacritty vlc evince eog fastfetch rofi ripgrep fd ttf-iosevka-nerd ttf-jetbrains-mono-nerd pavucontrol nvidia nvidia-utils nvidia-dkms nvidia-settings nvidia-peermem libva-mesa-driver nvidia-driver-libs";
 
-static const char *OXWM_PACKAGES = "base base-devel linux linux-firmware linux-headers networkmanager git vim neovim curl wget htop btop man-db man-pages openssh sudo xorg-server xorg-xinit xorg-xsetroot xorg-xrandr xorg-xset libx11 libxft libxinerama freetype2 fontconfig pkg-config lua firefox alacritty vlc evince eog zig ttf-iosevka-nerd ttf-jetbrains-mono-nerd picom xclip xwallpaper maim rofi pulseaudio pulseaudio-alsa pavucontrol alsa-utils fastfetch ripgrep fd pcmanfm lxappearance papirus-icon-theme gnome-themes-extra";
+static const char *OXWM_PACKAGES = "base base-devel linux linux-firmware linux-headers networkmanager git vim neovim curl wget htop btop man-db man-pages openssh sudo xorg-server xorg-xinit xorg-xsetroot xorg-xrandr xorg-xset libx11 libxft libxinerama freetype2 fontconfig pkg-config lua firefox alacritty vlc evince eog zig ttf-iosevka-nerd ttf-jetbrains-mono-nerd picom xclip xwallpaper maim rofi pulseaudio pulseaudio-alsa pavucontrol alsa-utils fastfetch ripgrep fd pcmanfm lxappearance papirus-icon-theme gnome-themes-extra nvidia nvidia-utils nvidia-dkms nvidia-settings nvidia-peermem libva-mesa-driver";
 
 static int is_uefi_system(void) {
     struct stat st;
@@ -1523,6 +1523,56 @@ static int configure_xfce(const char *username) {
     return 1;
 }
 
+static int configure_nvidia(const char *username) {
+    char cmd[4096];
+    int rows, cols;
+    get_terminal_size(&rows, &cols);
+    
+    clear_screen();
+    draw_logo(cols);
+    
+    int logo_start = get_logo_start(cols);
+    printf("\\033[%d;%dH\\033[37mConfiguring NVIDIA drivers...\\033[0m", 10, logo_start);
+    fflush(stdout);
+    
+    LOG_INFO("Configuring NVIDIA drivers for user: %s", username);
+    
+    setup_common_configs(username);
+    
+    // Create NVIDIA profile for automatic driver installation
+    snprintf(cmd, sizeof(cmd), "arch-chroot /mnt nvidia-settings -a \"^global^GpuPowerMgmt\" 0");
+    system(cmd);
+    
+    // Create NVIDIA profile configuration
+    snprintf(cmd, sizeof(cmd), "arch-chroot /mnt mkdir -p /etc/nvidia/profile.d/");
+    system(cmd);
+    
+    const char *nvidia_profile =
+        "#!/bin/bash\\n"
+        "# NVIDIA Driver Auto-Installation Profile\\n"
+        "# This script runs after system installation to enable NVIDIA drivers\\n"
+        "if [ -d /usr/lib/nvidia-550 ] || [ -d /usr/lib/nvidia-560 ] || [ -d /usr/lib/nvidia-565 ] || [ -d /usr/lib/nvidia-575 ] || [ -d /usr/lib/nvidia-585 ] || [ -d /usr/lib/nvidia-586 ] || [ -d /usr/lib/nvidia-595 ] || [ -d /usr/lib/nvidia-596 ] || [ -d /usr/lib/nvidia-615 ] || [ -d /usr/lib/nvidia-616 ] || [ -d /usr/lib/nvidia-650 ] || [ -d /usr/lib/nvidia-665 ] || [ -d /usr/lib/nvidia-685 ] || [ -d /usr/lib/nvidia-686 ] || [ -d /usr/lib/nvidia-687 ] || [ -d /usr/lib/nvidia-690 ] || [ -d /usr/lib/nvidia-691 ] || [ -d /usr/lib/nvidia-692 ] || [ -d /usr/lib/nvidia-695 ] || [ -d /usr/lib/nvidia-698 ] || [ -d /usr/lib/nvidia-735 ] || [ -d /usr/lib/nvidia-755 ]; then\\n"
+        "  echo 'NVIDIA drivers detected.'\\n"
+        "  echo 'Installing NVIDIA drivers...';\\n"
+        "  echo 'If you are on an NVIDIA GPU, the drivers should be working.';\\n"
+        "  echo 'Run nvidia-smi to verify.';\\n"
+        "  exit 0;\\n"
+        "fi\\n"
+        "echo 'NVIDIA GPU detected but drivers not installed.';\\n"
+        "echo 'Please run: pacman -S nvidia nvidia-utils nvidia-dkms nvidia-settings nvidia-peermem'";
+    
+    write_file("/etc/nvidia/profile.d/nvidia-auto-install.sh", nvidia_profile);
+    chmod("/etc/nvidia/profile.d/nvidia-auto-install.sh", 0755);
+    
+    // Add NVIDIA to the profile
+    snprintf(cmd, sizeof(cmd), "arch-chroot /mnt adduser %s wheel", username);
+    system(cmd);
+    
+    LOG_INFO("NVIDIA configuration completed successfully");
+    show_message("NVIDIA drivers configured!");
+    return 1;
+}
+
 static int configure_oxwm(const char *username) {
     char cmd[4096];
     int rows, cols;
@@ -1653,12 +1703,14 @@ int main(void) {
         CHECK_OR_FAIL(configure_system_impl(username, password, hostname, keyboard, timezone, disk, 0), "Failed to configure system");
         CHECK_OR_FAIL(install_bootloader(disk), "Failed to install bootloader");
         configure_xfce(username);
+        CHECK_OR_FAIL(configure_nvidia(username), "Failed to configure NVIDIA");
     } else {
         CHECK_OR_FAIL(partition_disk(disk), "Failed to partition disk");
         CHECK_OR_FAIL(install_packages_impl(OXWM_PACKAGES), "Failed to install packages");
         CHECK_OR_FAIL(configure_system_impl(username, password, hostname, keyboard, timezone, disk, 0), "Failed to configure system");
         CHECK_OR_FAIL(install_bootloader(disk), "Failed to install bootloader");
         configure_oxwm(username);
+        CHECK_OR_FAIL(configure_nvidia(username), "Failed to configure NVIDIA");
     }
 
     system("cp /tmp/tonarchy-install.log /mnt/var/log/tonarchy-install.log");
