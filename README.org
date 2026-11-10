@@ -121,13 +121,6 @@ make build_iso
 ./build_iso --container podman
 #+END_SRC
 
-Or natively (requires =archiso= and =musl=):
-
-#+BEGIN_SRC bash
-make build_iso
-./build_iso
-#+END_SRC
-
 ** On NixOS
 
 #+BEGIN_SRC bash
